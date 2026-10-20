@@ -9,6 +9,8 @@ import Table from 'react-bootstrap/Table';
 import InputGroup from 'react-bootstrap/InputGroup';
 import Card from 'react-bootstrap/Card';
 import Badge from 'react-bootstrap/Badge';
+import Modal from 'react-bootstrap/Modal';
+import Spinner from 'react-bootstrap/Spinner';
 import "./Productos.css"; // Usa los mismos estilos de productos
 
 // Normaliza texto: minúsculas y sin tildes, para comparar
@@ -21,6 +23,20 @@ const estaActivo = (producto) =>
 
 const FORM_VACIO = { cod_producto: "", descripcion: "", precio_compra: "", precio_venta: "", stock: "", cod_unidad: "", estado: 1 };
 
+// Campos editables, para detectar si hubo cambios
+const CAMPOS = ["descripcion", "precio_compra", "precio_venta", "stock", "cod_unidad", "estado"];
+
+// Datos del producto en el formato del formulario
+const aFormulario = (producto) => ({
+  cod_producto: producto.cod_producto,
+  descripcion: producto.descripcion || "",
+  precio_compra: producto.precio_compra ?? "",
+  precio_venta: producto.precio_venta ?? "",
+  stock: producto.stock ?? "",
+  cod_unidad: producto.cod_unidad ?? "",
+  estado: estaActivo(producto) ? 1 : 0,
+});
+
 export const EditarProducto = () => {
   const [productos, setProductos] = useState([]);
   const [unidadesMedida, setUnidadesMedida] = useState([]); // Estado para almacenar las unidades de medida
@@ -29,9 +45,12 @@ export const EditarProducto = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [alertVariant, setAlertVariant] = useState("success");
+  const [errorModal, setErrorModal] = useState("");
+  const [guardando, setGuardando] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [cambiandoEstado, setCambiandoEstado] = useState(null);
+  const [ultimoModificado, setUltimoModificado] = useState(null);
 
   useEffect(() => {
     fetchProductos();
@@ -57,7 +76,6 @@ export const EditarProducto = () => {
     setTimeout(() => setShowAlert(false), 3000);
   };
 
-  // La lista se filtra con el texto actual (antes usaba el valor anterior de la búsqueda)
   const palabras = normalizar(searchTerm).split(/\s+/).filter(Boolean);
   const filteredProductos = productos.filter(producto => {
     if (filtroEstado === "activos" && !estaActivo(producto)) return false;
@@ -69,13 +87,27 @@ export const EditarProducto = () => {
   const totalActivos = productos.filter(estaActivo).length;
   const totalInactivos = productos.length - totalActivos;
 
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
+  // ---- Ventana de modificación ----
+  const original = selectedProducto ? aFormulario(selectedProducto) : FORM_VACIO;
+  const hayCambios = Boolean(selectedProducto) && CAMPOS.some(campo => String(formData[campo]) !== String(original[campo]));
+
+  const precioCompra = parseFloat(formData.precio_compra);
+  const precioVenta = parseFloat(formData.precio_venta);
+  const margen = precioCompra > 0 && !Number.isNaN(precioVenta) ? ((precioVenta - precioCompra) / precioCompra) * 100 : null;
+  const ventaMenorCompra = !Number.isNaN(precioCompra) && !Number.isNaN(precioVenta) && precioVenta < precioCompra;
+
+  const abrirModal = (producto) => {
+    setSelectedProducto(producto);
+    setFormData(aFormulario(producto));
+    setErrorModal("");
   };
 
-  const handleSelectProducto = (producto) => {
-    setSelectedProducto(producto);
-    setFormData({ ...producto, estado: estaActivo(producto) ? 1 : 0 });
+  const cerrarModal = () => {
+    if (guardando) return;
+    if (hayCambios && !window.confirm("Hay cambios sin guardar. ¿Desea descartarlos?")) return;
+    setSelectedProducto(null);
+    setFormData(FORM_VACIO);
+    setErrorModal("");
   };
 
   const handleChange = (e) => {
@@ -84,18 +116,24 @@ export const EditarProducto = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!hayCambios) return;
 
+    setGuardando(true);
+    setErrorModal("");
     axios.put(`http://localhost:4000/productos/${formData.cod_producto}`, formData)
       .then(() => {
         fetchProductos();
-        mostrarAlerta("Producto actualizado correctamente");
+        mostrarAlerta(`Producto "${formData.descripcion}" actualizado correctamente`);
+        setUltimoModificado(formData.cod_producto);
+        setTimeout(() => setUltimoModificado(null), 3000);
         setSelectedProducto(null);
         setFormData(FORM_VACIO);
       })
       .catch(error => {
         console.error("Error al actualizar producto:", error);
-        mostrarAlerta("No se pudo actualizar el producto", "danger");
-      });
+        setErrorModal("No se pudo actualizar el producto. Intente de nuevo.");
+      })
+      .finally(() => setGuardando(false));
   };
 
   // Activar / desactivar directamente desde la lista
@@ -108,14 +146,9 @@ export const EditarProducto = () => {
     setCambiandoEstado(producto.cod_producto);
     axios.patch(`http://localhost:4000/productos/${producto.cod_producto}/estado`, { estado: activar ? 1 : 0 })
       .then(() => {
-        // Actualizar la lista sin recargar todo
         setProductos(prev => prev.map(p =>
           p.cod_producto === producto.cod_producto ? { ...p, estado: activar ? 1 : 0 } : p
         ));
-        // Si está abierto en el formulario, reflejar el cambio
-        if (selectedProducto && selectedProducto.cod_producto === producto.cod_producto) {
-          setFormData(prev => ({ ...prev, estado: activar ? 1 : 0 }));
-        }
         mostrarAlerta(`Producto "${producto.descripcion}" ${activar ? "activado" : "desactivado"}`);
       })
       .catch(error => {
@@ -136,20 +169,28 @@ export const EditarProducto = () => {
         </Alert>
       )}
 
-      {/* Barra de búsqueda */}
       <Card className="mb-4">
-        <Card.Header className="bg-primary text-white">
-          <h5 className="mb-0">Buscar Producto</h5>
+        <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
+          <h5 className="mb-0">Productos</h5>
+          <small>{`Mostrando ${filteredProductos.length} de ${productos.length}`}</small>
         </Card.Header>
         <Card.Body>
-          <Row className="g-3 align-items-center">
+          {/* Búsqueda y filtro */}
+          <Row className="g-3 align-items-center mb-3">
             <Col xs={12} md={8}>
               <InputGroup>
+                <InputGroup.Text>🔍</InputGroup.Text>
                 <Form.Control
                   placeholder="Buscar producto por nombre o código"
                   value={searchTerm}
-                  onChange={handleSearch}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  autoComplete="off"
                 />
+                {searchTerm && (
+                  <Button variant="outline-secondary" onClick={() => setSearchTerm("")} title="Limpiar búsqueda">
+                    ✕
+                  </Button>
+                )}
               </InputGroup>
             </Col>
             <Col xs={12} md={4}>
@@ -160,46 +201,48 @@ export const EditarProducto = () => {
               </Form.Select>
             </Col>
           </Row>
-        </Card.Body>
-      </Card>
 
-      {/* Lista de productos */}
-      <Card className="mb-4">
-        <Card.Header className="bg-info text-white">
-          <h5 className="mb-0">Resultados de la Búsqueda</h5>
-        </Card.Header>
-        <Card.Body>
-          <Table striped bordered hover responsive translate="no">
+          {/* Lista de productos */}
+          <Table striped bordered hover responsive translate="no" className="align-middle mb-0">
             <thead>
               <tr>
                 <th>Código</th>
                 <th>Descripción</th>
-                <th>Precio Venta</th>
-                <th>Stock</th>
+                <th>Unidad</th>
+                <th className="text-end">Precio Venta</th>
+                <th className="text-end">Stock</th>
                 <th>Estado</th>
-                <th>Acciones</th>
+                <th className="text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filteredProductos.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="text-center text-muted">No se encontraron productos</td>
+                  <td colSpan="7" className="text-center text-muted">No se encontraron productos</td>
                 </tr>
               )}
               {filteredProductos.map(producto => {
                 const activo = estaActivo(producto);
+                const recienModificado = ultimoModificado === producto.cod_producto;
                 return (
-                  <tr key={producto.cod_producto} className={activo ? "" : "text-muted"}>
+                  <tr
+                    key={producto.cod_producto}
+                    className={`${activo ? "" : "text-muted"} ${recienModificado ? "table-success" : ""}`}
+                    onDoubleClick={() => abrirModal(producto)}
+                    style={{ cursor: "pointer" }}
+                    title="Doble clic para modificar"
+                  >
                     <td>{producto.cod_producto}</td>
                     <td>{producto.descripcion}</td>
-                    <td>{`Q${(parseFloat(producto.precio_venta) || 0).toFixed(2)}`}</td>
-                    <td>{producto.stock}</td>
+                    <td>{producto.medida || "—"}</td>
+                    <td className="text-end">{`Q${(parseFloat(producto.precio_venta) || 0).toFixed(2)}`}</td>
+                    <td className="text-end">{producto.stock}</td>
                     <td>
                       <Badge bg={activo ? "success" : "secondary"}>{activo ? "Activo" : "Inactivo"}</Badge>
                     </td>
-                    <td className="text-nowrap">
-                      <Button variant="primary" size="sm" className="me-2" onClick={() => handleSelectProducto(producto)}>
-                        Seleccionar
+                    <td className="text-nowrap text-center">
+                      <Button variant="primary" size="sm" className="me-2" onClick={() => abrirModal(producto)}>
+                        ✏️ Modificar
                       </Button>
                       <Button
                         variant={activo ? "outline-danger" : "outline-success"}
@@ -218,15 +261,24 @@ export const EditarProducto = () => {
         </Card.Body>
       </Card>
 
-      {/* Formulario para modificar producto */}
-      {selectedProducto && (
-        <Card>
-          <Card.Header className="bg-warning text-dark">
-            <h5 className="mb-0">{`Modificar Producto: ${selectedProducto.descripcion}`}</h5>
-          </Card.Header>
-          <Card.Body>
-            <Form onSubmit={handleSubmit}>
-              <Form.Group className="mb-3" controlId="formDescripcion">
+      {/* Ventana emergente para modificar producto */}
+      <Modal show={Boolean(selectedProducto)} onHide={cerrarModal} size="lg" centered backdrop="static">
+        <Form onSubmit={handleSubmit}>
+          <Modal.Header closeButton={!guardando}>
+            <Modal.Title>
+              {`Modificar producto #${formData.cod_producto}`}
+              {selectedProducto && (
+                <div className="fs-6 text-muted fw-normal">{selectedProducto.descripcion}</div>
+              )}
+            </Modal.Title>
+          </Modal.Header>
+
+          <Modal.Body>
+            {errorModal && <Alert variant="danger">{errorModal}</Alert>}
+
+            <h6 className="text-uppercase text-muted small mb-2">Datos generales</h6>
+            <Row className="g-3 mb-4">
+              <Form.Group as={Col} xs={12} md={8} controlId="formDescripcion">
                 <Form.Label>Descripción</Form.Label>
                 <Form.Control
                   type="text"
@@ -234,84 +286,115 @@ export const EditarProducto = () => {
                   placeholder="Descripción del producto"
                   value={formData.descripcion}
                   onChange={handleChange}
+                  maxLength={45}
                   required
+                  autoFocus
                 />
+                <Form.Text muted>{`${formData.descripcion.length}/45 caracteres`}</Form.Text>
               </Form.Group>
 
-              <Row className="mb-3">
-                <Form.Group as={Col} controlId="formPrecioCompra">
-                  <Form.Label>Precio de Compra</Form.Label>
+              {/* Combo box de Unidades de Medida */}
+              <Form.Group as={Col} xs={12} md={4} controlId="formCodUnidad">
+                <Form.Label>Unidad de Medida</Form.Label>
+                <Form.Select name="cod_unidad" value={formData.cod_unidad} onChange={handleChange} required>
+                  <option value="">Seleccione una unidad</option>
+                  {unidadesMedida.map(unidad => (
+                    <option key={unidad.cod_unidad} value={unidad.cod_unidad}>
+                      {unidad.medida}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Row>
+
+            <h6 className="text-uppercase text-muted small mb-2">Precios e inventario</h6>
+            <Row className="g-3 mb-2">
+              <Form.Group as={Col} xs={12} md={4} controlId="formPrecioCompra">
+                <Form.Label>Precio de Compra</Form.Label>
+                <InputGroup>
+                  <InputGroup.Text>Q</InputGroup.Text>
                   <Form.Control
                     type="number"
                     step="0.01"
+                    min="0"
                     name="precio_compra"
                     placeholder="0.00"
                     value={formData.precio_compra}
                     onChange={handleChange}
                     required
                   />
-                </Form.Group>
+                </InputGroup>
+              </Form.Group>
 
-                <Form.Group as={Col} controlId="formPrecioVenta">
-                  <Form.Label>Precio de Venta</Form.Label>
+              <Form.Group as={Col} xs={12} md={4} controlId="formPrecioVenta">
+                <Form.Label>Precio de Venta</Form.Label>
+                <InputGroup>
+                  <InputGroup.Text>Q</InputGroup.Text>
                   <Form.Control
                     type="number"
                     step="0.01"
+                    min="0"
                     name="precio_venta"
                     placeholder="0.00"
                     value={formData.precio_venta}
                     onChange={handleChange}
+                    isInvalid={ventaMenorCompra}
                     required
                   />
-                </Form.Group>
-              </Row>
-
-              <Row className="mb-3">
-                <Form.Group as={Col} controlId="formStock">
-                  <Form.Label>Stock</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="stock"
-                    placeholder="Cantidad disponible"
-                    value={formData.stock}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
-
-                {/* Combo box de Unidades de Medida */}
-                <Form.Group as={Col} controlId="formCodUnidad">
-                  <Form.Label>Unidad de Medida</Form.Label>
-                  <Form.Select name="cod_unidad" value={formData.cod_unidad} onChange={handleChange} required>
-                    <option value="">Seleccione una unidad</option>
-                    {unidadesMedida.map(unidad => (
-                      <option key={unidad.cod_unidad} value={unidad.cod_unidad}>
-                        {unidad.medida}
-                      </option>
-                    ))}
-                  </Form.Select>
-                </Form.Group>
-              </Row>
-
-              {/* Estado del producto */}
-              <Form.Group className="mb-3" controlId="formEstado">
-                <Form.Label>Estado</Form.Label>
-                <Form.Check
-                  type="switch"
-                  label={Number(formData.estado) === 1 ? "Activo" : "Inactivo (no aparecerá en nuevas prefacturas)"}
-                  checked={Number(formData.estado) === 1}
-                  onChange={(e) => setFormData({ ...formData, estado: e.target.checked ? 1 : 0 })}
-                />
+                </InputGroup>
               </Form.Group>
 
-              <Button variant="warning" type="submit" className="me-2">Actualizar Producto</Button>
-              <Button variant="outline-secondary" onClick={() => { setSelectedProducto(null); setFormData(FORM_VACIO); }}>
-                Cancelar
-              </Button>
-            </Form>
-          </Card.Body>
-        </Card>
-      )}
+              <Form.Group as={Col} xs={12} md={4} controlId="formStock">
+                <Form.Label>Stock</Form.Label>
+                <Form.Control
+                  type="number"
+                  min="0"
+                  name="stock"
+                  placeholder="Cantidad disponible"
+                  value={formData.stock}
+                  onChange={handleChange}
+                  required
+                />
+              </Form.Group>
+            </Row>
+
+            {/* Margen calculado al momento */}
+            <div className={`small mb-4 ${ventaMenorCompra ? "text-danger fw-bold" : "text-muted"}`}>
+              {margen === null
+                ? "Ingrese el precio de compra y de venta para ver el margen de ganancia."
+                : `Margen de ganancia: ${margen.toFixed(1)}% (Q${(precioVenta - precioCompra).toFixed(2)} por unidad)${
+                    ventaMenorCompra ? " — el precio de venta es menor que el de compra" : ""
+                  }`}
+            </div>
+
+            <h6 className="text-uppercase text-muted small mb-2">Estado</h6>
+            <Form.Check
+              type="switch"
+              id="formEstado"
+              label={Number(formData.estado) === 1 ? "Activo" : "Inactivo (no aparecerá en nuevas prefacturas)"}
+              checked={Number(formData.estado) === 1}
+              onChange={(e) => setFormData({ ...formData, estado: e.target.checked ? 1 : 0 })}
+            />
+          </Modal.Body>
+
+          <Modal.Footer>
+            {!hayCambios && <small className="text-muted me-auto">Sin cambios</small>}
+            <Button variant="outline-secondary" onClick={cerrarModal} disabled={guardando}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit" disabled={!hayCambios || guardando}>
+              {guardando ? (
+                <>
+                  <Spinner as="span" animation="border" size="sm" className="me-2" />
+                  <span>Guardando...</span>
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
     </div>
   );
 };

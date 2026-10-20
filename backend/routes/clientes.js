@@ -22,13 +22,27 @@ router.post("/", (req, res) => {
 });
 
 router.put("/:id", (req, res) => {
-    console.log("Editar Cliente")
-    const {cod_cliente, nombre, nit, direccion, telefono, email } = req.body;
+    console.log("Editar Cliente", req.params.id, req.body)
+    // Se actualiza el cliente indicado en la URL (antes se tomaba del cuerpo de la petición)
+    const cod_cliente = req.params.id;
+    const { nombre, nit, direccion, telefono, email } = req.body;
+
+    if (!nombre || !nit || !direccion) {
+      return res.status(400).json({ error: "Nombre, NIT y dirección son obligatorios" });
+    }
+
+    // telefono es INT en la base de datos: se guardan solo los dígitos; vacío → NULL
+    const digitosTelefono = (telefono ?? "").toString().replace(/\D/g, "");
+    const telefonoFinal = digitosTelefono ? Number(digitosTelefono) : null;
+    // email es opcional; vacío → NULL
+    const emailFinal = email && email.toString().trim() ? email.toString().trim() : null;
+
     db.query(
       "UPDATE cliente SET nombre = ?, nit = ?, direccion = ?, telefono = ?, email = ? WHERE cod_cliente = ?",
-      [nombre, nit, direccion, telefono, email, cod_cliente],
+      [nombre.trim(), nit.trim(), direccion.trim(), telefonoFinal, emailFinal, cod_cliente],
       (err, results) => {
         if (err) return res.status(500).json(err);
+        if (results.affectedRows === 0) return res.status(404).json({ error: "Cliente no encontrado" });
         res.json({ message: "Cliente actualizado" });
       }
     );
