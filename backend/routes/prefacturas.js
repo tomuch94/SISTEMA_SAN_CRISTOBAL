@@ -6,10 +6,18 @@ const fs = require("fs");
 const puppeteer = require("puppeteer");
 
 router.get("/", (req, res) => {
-  db.query("SELECT * FROM prefactura", (err, results) => {
-    if (err) return res.status(500).json(err);
-    res.json(results);
-  });
+  // Incluye nombre y NIT del cliente; la fecha se devuelve como texto (YYYY-MM-DD) para evitar desfases de zona horaria
+  db.query(
+    `SELECT p.cod_factura, p.cod_cliente, DATE_FORMAT(p.fecha, '%Y-%m-%d') AS fecha, p.factura, p.total,
+            c.nombre, c.nit
+       FROM prefactura p
+       LEFT JOIN cliente c ON c.cod_cliente = p.cod_cliente
+      ORDER BY p.fecha DESC, p.cod_factura DESC`,
+    (err, results) => {
+      if (err) return res.status(500).json(err);
+      res.json(results);
+    }
+  );
 });
 
 router.post("/", (req, res) => {
@@ -83,6 +91,108 @@ router.get("/ultimo_codigo", (req, res) => {
     if (err) return res.status(500).json(err);
     console.log(results[0]);
     res.json({ ultimo_codigo: results.length > 0 ? results[0].cod_factura : null });
+  });
+});
+
+// Obtener una prefactura con su cliente y detalle (para editarla)
+// Debe ir después de /ultimo_codigo para que esa ruta no se tome como un código
+router.get("/:cod_factura", (req, res) => {
+  const { cod_factura } = req.params;
+  db.query(
+    `SELECT p.cod_factura, p.cod_cliente, DATE_FORMAT(p.fecha, '%Y-%m-%d') AS fecha, p.factura, p.total,
+            c.nombre, c.nit
+       FROM prefactura p
+       LEFT JOIN cliente c ON c.cod_cliente = p.cod_cliente
+      WHERE p.cod_factura = ?`,
+    [cod_factura],
+    (err, prefacturas) => {
+      if (err) return res.status(500).json(err);
+      if (prefacturas.length === 0) return res.status(404).json({ error: "Prefactura no encontrada" });
+
+      db.query(
+        `SELECT d.cod_producto, d.precio, d.cantidad, d.total, pr.descripcion, pr.stock, um.medida
+           FROM detalle_prefactura d
+           INNER JOIN producto pr ON pr.cod_producto = d.cod_producto
+           LEFT JOIN unidad_medida um ON um.cod_unidad = pr.cod_unidad
+          WHERE d.cod_prefactura = ?
+          ORDER BY d.iddetalle_prefactura`,
+        [cod_factura],
+        (err, detalles) => {
+          if (err) return res.status(500).json(err);
+          res.json({ ...prefacturas[0], detalles });
+        }
+      );
+    }
+  );
+});
+
+// Actualizar una prefactura: encabezado y detalle (el detalle se reemplaza completo)
+router.put("/:cod_factura", (req, res) => {
+  console.log("PUT Actualizar Prefactura", req.params.cod_factura, req.body);
+  const { cod_factura } = req.params;
+  const { cod_cliente, fecha, total, detalles } = req.body;
+
+  if (!cod_cliente || !fecha) {
+    return res.status(400).json({ error: "Cliente y fecha son obligatorios" });
+  }
+
+  db.query("SELECT factura FROM prefactura WHERE cod_factura = ?", [cod_factura], (err, results) => {
+    if (err) return res.status(500).json(err);
+    if (results.length === 0) return res.status(404).json({ error: "Prefactura no encontrada" });
+    // Una prefactura ya facturada no se puede modificar
+    if (Number(results[0].factura) === 1) {
+      return res.status(409).json({ error: "La prefactura ya fue facturada y no se puede modificar" });
+    }
+
+    db.beginTransaction((err) => {
+      if (err) {
+        console.error("Error al iniciar transacción:", err);
+        return res.status(500).json({ error: "Error al iniciar transacción" });
+      }
+
+      const fallar = (mensaje, error) =>
+        db.rollback(() => {
+          console.error(mensaje, error);
+          res.status(500).json({ error: mensaje });
+        });
+
+      db.query(
+        "UPDATE prefactura SET cod_cliente = ?, fecha = ?, total = ? WHERE cod_factura = ?",
+        [cod_cliente, fecha, total, cod_factura],
+        (err) => {
+          if (err) return fallar("Error al actualizar la prefactura", err);
+
+          db.query("DELETE FROM detalle_prefactura WHERE cod_prefactura = ?", [cod_factura], (err) => {
+            if (err) return fallar("Error al actualizar los detalles de la prefactura", err);
+
+            const confirmar = () =>
+              db.commit((err) => {
+                if (err) return fallar("Error al confirmar los cambios", err);
+                console.log("Prefactura actualizada correctamente");
+                res.json({ message: "Prefactura actualizada con éxito" });
+              });
+
+            if (!detalles || detalles.length === 0) return confirmar();
+
+            const detalleValores = detalles.map((detalle) => [
+              cod_factura,
+              detalle.cod_producto,
+              detalle.precio,
+              detalle.cantidad,
+              detalle.total
+            ]);
+            db.query(
+              "INSERT INTO detalle_prefactura (cod_prefactura, cod_producto, precio, cantidad, total) VALUES ?",
+              [detalleValores],
+              (err) => {
+                if (err) return fallar("Error al guardar los detalles de la prefactura", err);
+                confirmar();
+              }
+            );
+          });
+        }
+      );
+    });
   });
 });
 

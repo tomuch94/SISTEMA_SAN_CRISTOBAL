@@ -19,7 +19,25 @@ const MAX_SUGERENCIAS = 10;
 const normalizar = (texto) =>
   (texto || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-export const NuevaPrefactura = () => {
+// Fecha local en formato YYYY-MM-DD (toISOString usa UTC y puede cambiar el día)
+const fechaATexto = (fecha) =>
+  `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+
+// "YYYY-MM-DD" → Date local (new Date("YYYY-MM-DD") lo toma como UTC y puede mostrar el día anterior)
+const textoAFecha = (texto) => {
+  const [anio, mes, dia] = (texto || "").split("-").map(Number);
+  return anio ? new Date(anio, mes - 1, dia) : new Date();
+};
+
+// Sin codFactura: registra una prefactura nueva.
+// Con codFactura: carga esa prefactura y guarda los cambios (módulo de edición).
+export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
+  const modoEdicion = Boolean(codFactura);
+  const [cargando, setCargando] = useState(modoEdicion);
+  const [errorCarga, setErrorCarga] = useState("");
+  const [facturada, setFacturada] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [alertVariant, setAlertVariant] = useState("success");
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -51,8 +69,53 @@ export const NuevaPrefactura = () => {
   useEffect(() => {
     fetchClientes();
     fetchProductos();
-    generarCodigoFactura(); // Generar código de factura al cargar el formulario
-  }, []);
+    if (modoEdicion) {
+      cargarPrefactura(codFactura);
+    } else {
+      generarCodigoFactura(); // Generar código de factura al cargar el formulario
+    }
+  }, [codFactura]);
+
+  // Carga una prefactura existente con su cliente y productos
+  const cargarPrefactura = (codigo) => {
+    setCargando(true);
+    setErrorCarga("");
+    axios.get(`http://localhost:4000/prefacturas/${encodeURIComponent(codigo)}`)
+      .then(({ data }) => {
+        setFormData({
+          cod_cliente: data.cod_cliente ? data.cod_cliente.toString() : "",
+          fecha: textoAFecha(data.fecha),
+          factura: data.cod_factura,
+        });
+        setBusquedaCliente(data.nombre ? textoCliente(data) : "");
+        setFacturada(Number(data.factura) === 1);
+        // Se conserva el precio con el que se cotizó, no el precio actual del producto
+        setSelectedProductos((data.detalles || []).map((d) => ({
+          cod_producto: d.cod_producto,
+          descripcion: d.descripcion,
+          medida: d.medida,
+          stock: d.stock,
+          precio_venta: parseFloat(d.precio) || 0,
+          cantidad: parseInt(d.cantidad, 10) || 1,
+        })));
+      })
+      .catch((error) => {
+        console.error("Error al cargar prefactura:", error);
+        setErrorCarga(
+          error.response && error.response.status === 404
+            ? `No se encontró la prefactura ${codigo}`
+            : "No se pudo cargar la prefactura"
+        );
+      })
+      .finally(() => setCargando(false));
+  };
+
+  const mostrarAlerta = (mensaje, variante = "success") => {
+    setAlertVariant(variante);
+    setAlertMessage(mensaje);
+    setShowAlert(true);
+    setTimeout(() => setShowAlert(false), 4000);
+  };
 
   // Cuando cambia el cliente seleccionado
   useEffect(() => {
@@ -307,7 +370,7 @@ export const NuevaPrefactura = () => {
 
     const prefacturaData = {
       cod_cliente: formData.cod_cliente,
-      fecha: formData.fecha.toISOString().split("T")[0],
+      fecha: fechaATexto(formData.fecha),
       factura: 0,
       codigo_factura: formData.factura,
       total: totalPrefactura,
@@ -319,11 +382,22 @@ export const NuevaPrefactura = () => {
       })),
     };
 
+    if (modoEdicion) {
+      setGuardando(true);
+      axios.put(`http://localhost:4000/prefacturas/${encodeURIComponent(codFactura)}`, prefacturaData)
+        .then(() => mostrarAlerta("Prefactura actualizada correctamente"))
+        .catch((error) => {
+          console.error("Error al actualizar prefactura:", error);
+          const mensaje = error.response && error.response.data && error.response.data.error;
+          mostrarAlerta(mensaje || "No se pudo actualizar la prefactura", "danger");
+        })
+        .finally(() => setGuardando(false));
+      return;
+    }
+
     axios.post("http://localhost:4000/prefacturas", prefacturaData)
       .then((response) => {
-        setShowAlert(true);
-        setAlertMessage("Prefactura registrada correctamente");
-        setTimeout(() => setShowAlert(false), 3000);
+        mostrarAlerta("Prefactura registrada correctamente");
 
         // Generar PDF después de registrar
         generarPDF();
@@ -406,23 +480,39 @@ export const NuevaPrefactura = () => {
 
   return (
     <div className="container mt-4">
-      <h1 className="mb-4">Nueva Prefactura</h1>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h1 className="mb-0">{modoEdicion ? `Editar Prefactura ${codFactura}` : "Nueva Prefactura"}</h1>
+        {onVolver && (
+          <Button variant="outline-secondary" onClick={onVolver}>
+            ← Volver al listado
+          </Button>
+        )}
+      </div>
 
       {showAlert && (
-        <Alert variant="success">
+        <Alert variant={alertVariant}>
           <Alert.Heading>{alertMessage}</Alert.Heading>
         </Alert>
       )}
 
-      {/* Formulario para ingresar prefactura */}
+      {cargando && <Alert variant="info">Cargando prefactura...</Alert>}
+      {errorCarga && <Alert variant="danger">{errorCarga}</Alert>}
+      {facturada && (
+        <Alert variant="warning">
+          Esta prefactura ya fue facturada; puede consultarla y generar el PDF, pero no modificarla.
+        </Alert>
+      )}
+
+      {/* Formulario para ingresar o editar la prefactura */}
+      {!cargando && !errorCarga && (
       <Form onSubmit={handleSubmit}>
-        <Row className="mb-3">
-          <Form.Group as={Col} controlId="formFactura">
+        <Row className="mb-3 g-3 align-items-start">
+          <Form.Group as={Col} xs={12} md={3} controlId="formFactura">
             <Form.Label>Código de Factura</Form.Label>
             <Form.Control type="text" value={formData.factura} readOnly />
           </Form.Group>
 
-          <Form.Group as={Col} controlId="formCliente" className="position-relative">
+          <Form.Group as={Col} xs={12} md={6} controlId="formCliente" className="position-relative">
             <Form.Label>Cliente</Form.Label>
             <InputGroup hasValidation>
               <Form.Control
@@ -450,7 +540,7 @@ export const NuevaPrefactura = () => {
               <ListGroup
                 translate="no"
                 className="position-absolute shadow"
-                style={{ zIndex: 1000, maxHeight: "320px", overflowY: "auto", left: 0, right: 0, margin: "0 calc(var(--bs-gutter-x) * .5)" }}
+                style={{ zIndex: 1000, maxHeight: "320px", overflowY: "auto", left: "calc(var(--bs-gutter-x) * .5)", right: "calc(var(--bs-gutter-x) * .5)" }}
               >
                 {sugerenciasClientes.length === 0 ? (
                   <ListGroup.Item className="text-muted">
@@ -484,9 +574,12 @@ export const NuevaPrefactura = () => {
             )}
           </Form.Group>
 
-          <Form.Group as={Col} controlId="formFecha">
+          <Form.Group as={Col} xs={12} md={3} controlId="formFecha">
             <Form.Label>Fecha</Form.Label>
+            {/* wrapperClassName: el DatePicker usa un contenedor inline-block; se fuerza a ancho completo */}
             <DatePicker
+              id="formFecha"
+              wrapperClassName="d-block w-100"
               selected={formData.fecha}
               onChange={(date) => setFormData((prev) => ({ ...prev, fecha: date }))}
               className="form-control"
@@ -627,8 +720,13 @@ export const NuevaPrefactura = () => {
 
         <Row className="mt-3">
           <Col>
-            <Button variant="primary" type="submit" className="me-2" disabled={generandoPDF}>
-              Registrar Prefactura
+            <Button
+              variant="primary"
+              type="submit"
+              className="me-2"
+              disabled={generandoPDF || guardando || facturada}
+            >
+              {modoEdicion ? (guardando ? "Guardando..." : "Guardar Cambios") : "Registrar Prefactura"}
             </Button>
 
             <Button
@@ -641,6 +739,7 @@ export const NuevaPrefactura = () => {
           </Col>
         </Row>
       </Form>
+      )}
     </div>
   );
 };
