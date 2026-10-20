@@ -12,6 +12,7 @@ import Row from "react-bootstrap/Row";
 import Col from "react-bootstrap/Col";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { NuevoClienteModal } from "../Clientes/NuevoClienteModal";
 
 const MAX_SUGERENCIAS = 10;
 
@@ -54,6 +55,8 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
   const [mostrarSugerenciasClientes, setMostrarSugerenciasClientes] = useState(false);
   const [indiceClienteResaltado, setIndiceClienteResaltado] = useState(-1);
   const [errorCliente, setErrorCliente] = useState(false);
+  const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
+  const [datosNuevoCliente, setDatosNuevoCliente] = useState({});
   const [generandoPDF, setGenerandoPDF] = useState(false);
   const [formData, setFormData] = useState({
     cod_cliente: "",
@@ -188,9 +191,35 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
     setIndiceClienteResaltado(-1);
   };
 
+  // ---- Registro de cliente nuevo desde la prefactura ----
+  const abrirNuevoCliente = () => {
+    const texto = busquedaCliente.trim();
+    // Si lo escrito parece un NIT (dígitos, guion, K final o CF) se precarga como NIT; si no, como nombre
+    const pareceNit = /^(cf|[0-9][0-9\s-]*[0-9k])$/i.test(texto) || /^[0-9]$/.test(texto);
+    setDatosNuevoCliente(
+      formData.cod_cliente || !texto ? {} : pareceNit ? { nit: texto.toUpperCase() } : { nombre: texto }
+    );
+    setMostrarSugerenciasClientes(false);
+    setMostrarNuevoCliente(true);
+  };
+
+  const handleClienteCreado = (cliente) => {
+    // Agregarlo a la lista (si es nuevo) y dejarlo seleccionado en la prefactura
+    setClientes((prev) =>
+      prev.some((c) => c.cod_cliente === cliente.cod_cliente) ? prev : [...prev, cliente]
+    );
+    handleSelectCliente(cliente);
+    setMostrarNuevoCliente(false);
+    mostrarAlerta(`Cliente "${cliente.nombre}" seleccionado`);
+  };
+
   const handleBusquedaClienteKeyDown = (e) => {
     if (!mostrarSugerenciasClientes || sugerenciasClientes.length === 0) {
-      if (e.key === "Enter") e.preventDefault(); // Evita enviar el formulario
+      if (e.key === "Enter") {
+        e.preventDefault(); // Evita enviar el formulario
+        // Sin coincidencias: Enter abre el registro de cliente nuevo
+        if (busquedaCliente.trim() && !formData.cod_cliente) abrirNuevoCliente();
+      }
       return;
     }
     if (e.key === "ArrowDown") {
@@ -534,8 +563,16 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
                   ✕
                 </Button>
               )}
+              <Button
+                variant="outline-primary"
+                onClick={abrirNuevoCliente}
+                disabled={facturada}
+                title="Registrar un cliente nuevo"
+              >
+                ➕ Nuevo
+              </Button>
               <Form.Control.Feedback type="invalid">
-                Seleccione un cliente de la lista
+                Seleccione un cliente de la lista o registre uno nuevo
               </Form.Control.Feedback>
             </InputGroup>
 
@@ -548,6 +585,7 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
                 {sugerenciasClientes.length === 0 ? (
                   <ListGroup.Item className="text-muted">
                     {`No se encontraron clientes para "${busquedaCliente}"`}
+                    <div className="small">Presione Enter o use la opción de abajo para registrarlo.</div>
                   </ListGroup.Item>
                 ) : (
                   sugerenciasClientes.map((cliente, index) => {
@@ -568,6 +606,16 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
                     );
                   })
                 )}
+                {/* Siempre disponible: registrar un cliente que no está en la lista */}
+                <ListGroup.Item
+                  action
+                  type="button"
+                  className="text-primary fw-semibold"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={abrirNuevoCliente}
+                >
+                  {`➕ Registrar nuevo cliente "${busquedaCliente.trim()}"`}
+                </ListGroup.Item>
               </ListGroup>
             )}
             {clienteSeleccionado && formData.cod_cliente && (
@@ -743,6 +791,15 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
         </Row>
       </Form>
       )}
+
+      {/* Registro de cliente nuevo (fuera del formulario de la prefactura) */}
+      <NuevoClienteModal
+        show={mostrarNuevoCliente}
+        onHide={() => setMostrarNuevoCliente(false)}
+        onCreado={handleClienteCreado}
+        datosIniciales={datosNuevoCliente}
+        clientes={clientes}
+      />
     </div>
   );
 };

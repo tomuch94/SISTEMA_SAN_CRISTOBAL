@@ -11,12 +11,35 @@ router.get("/", (req, res) => {
 
 router.post("/", (req, res) => {
   const { nombre, nit, direccion, telefono, email } = req.body;
+
+  if (!nombre || !nit || !direccion) {
+    return res.status(400).json({ error: "Nombre, NIT y dirección son obligatorios" });
+  }
+
+  // telefono es INT en la base de datos: se guardan solo los dígitos; vacío → NULL
+  const digitosTelefono = (telefono ?? "").toString().replace(/\D/g, "");
+  const telefonoFinal = digitosTelefono ? Number(digitosTelefono) : null;
+  // email es opcional; vacío → NULL
+  const emailFinal = email && email.toString().trim() ? email.toString().trim() : null;
+
   db.query(
     "INSERT INTO cliente (nombre, nit, direccion, telefono, email) VALUES (?, ?, ?, ?, ?)",
-    [nombre, nit, direccion, telefono, email],
+    [nombre.trim(), nit.trim(), direccion.trim(), telefonoFinal, emailFinal],
     (err, results) => {
       if (err) return res.status(500).json(err);
-      res.json({ message: "Cliente agregado" });
+      // Se devuelve el cliente creado para poder seleccionarlo de inmediato (p. ej. en Nueva Prefactura)
+      res.json({
+        message: "Cliente agregado",
+        cod_cliente: results.insertId,
+        cliente: {
+          cod_cliente: results.insertId,
+          nombre: nombre.trim(),
+          nit: nit.trim(),
+          direccion: direccion.trim(),
+          telefono: telefonoFinal,
+          email: emailFinal,
+        },
+      });
     }
   );
 });
