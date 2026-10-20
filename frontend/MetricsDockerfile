@@ -1,0 +1,17 @@
+# MetricsDockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copiar solo los archivos necesarios para el servidor de métricas
+COPY package.json ./
+COPY metricsServer.js ./
+
+# Instalar dependencias para el servidor de métricas
+RUN npm install express cors prom-client
+
+# Exponer puerto para métricas
+EXPOSE 9091
+
+# Comando para iniciar el servidor
+CMD ["node", "metricsServer.js"]

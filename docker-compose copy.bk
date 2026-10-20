@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    cap_add:
+      - SYS_NICE
+    restart: always
+    environment:
+      - MYSQL_DATABASE=sancristobal
+      - MYSQL_ROOT_PASSWORD=Passw0rd
+    ports:
+      - '3308:3306'
+    volumes:
+      - db:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pPassw0rd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app-backend
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=Passw0rd
+      - DB_NAME=sancristobal
+    depends_on:
+      db:
+        condition: service_healthy  # Espera a que la DB esté lista
+    command: npm run dev
+    networks:
+      - app-network
+  
+    
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: app-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      # Dos opciones de URL - una para el navegador, otra para la comunicación interna
+      - REACT_APP_API_URL=http://localhost:4000
+      - REACT_APP_INTERNAL_API_URL=http://app-backend:4000
+      # Variables para Vite
+      - VITE_API_URL=http://localhost:4000
+      - VITE_INTERNAL_API_URL=http://app-backend:4000
+    depends_on:
+      - backend
+    command: npm start
+    networks:
+      - app-network
+    
+volumes:
+  db:
+    driver: local
+networks:
+  app-network:
+    driver: bridge

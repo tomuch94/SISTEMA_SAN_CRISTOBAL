@@ -1,0 +1,6 @@
+Una vez que hayas resuelto el problema del puerto 3308, deberías poder acceder a:
+
+Tu frontend en: http://localhost:3000
+Grafana en: http://localhost:3001 (usuario: admin, contraseña: admin)
+Prometheus en: http://localhost:9090
+El servidor de métricas en: http://localhost:9091/metrics

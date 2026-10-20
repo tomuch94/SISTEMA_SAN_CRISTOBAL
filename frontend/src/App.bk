@@ -1,0 +1,36 @@
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Clientes from "./modules/Clientes/Clientes";
+import ModificarCliente from "./modules/Clientes/Modificar_Cliente";
+
+import { NuevoProducto } from './modules/Productos/Productos';
+import { EditarProducto } from './modules/Productos/EditarProducto';
+// import { Prefacturas } from './modules/Prefacturas';
+import { NuevaPrefactura } from './modules/Prefacturas/NuevaPrefactura';
+import { Creditos } from './modules/Creditos';
+import { Movimientos } from "./modules/Movimientos";
+import { InsertarUnidadMedida } from "./modules/UnidadesMedida/UnidadesMedida";
+import Navbar from "./components/Navbar";
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+
+
+function App() {
+  return (
+    <Router>
+      <Navbar />
+      <Routes>
+        <Route path="/clientes/nuevo" element={<Clientes />} />
+        <Route path="/clientes/modificar" element={<ModificarCliente />} />
+        <Route path="/productos/nuevo" element={<NuevoProducto />} />
+        <Route path="/productos/modificar" element={<EditarProducto />} />
+        {/* <Route path="/prefacturas" element={<Prefacturas />} /> */}
+        <Route path="/prefacturas/nuevo" element={<NuevaPrefactura />} />
+        <Route path="/creditos" element={<Creditos />} />
+        <Route path="/movimientos" element={<Movimientos />} />
+        <Route path="/unidades-medida" element={<InsertarUnidadMedida />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;

@@ -1,0 +1,36 @@
+
+
+
+npx create-react-app frontend
+cd frontend
+npm install
+npm install bootstrap
+npm install react-router-dom axios
+npm install react-bootstrap bootstrap
+npm install react-datepicker
+
+
+
+En index.js o main.jsx, importa Bootstrap:
+import 'bootstrap/dist/css/bootstrap.min.css';
+
+
+
+md src\modules src\components src\services
+type nul > src\modules\Clientes.jsx
+type nul > src\modules\Productos.jsx
+type nul > src\modules\Prefacturas.jsx
+type nul > src\modules\Creditos.jsx
+type nul > src\modules\Movimientos.jsx
+type nul > src\modules\UnidadesMedida.jsx
+type nul > src\components\Navbar.jsx
+type nul > src\services\api.js
+
+
+
+
+
+
+
+
+
