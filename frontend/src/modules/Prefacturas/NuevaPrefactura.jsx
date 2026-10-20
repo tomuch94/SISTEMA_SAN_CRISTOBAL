@@ -41,8 +41,12 @@ export const NuevaPrefactura = () => {
     cod_cliente: "",
     fecha: new Date(),
     factura: "",
-    total: 0,
   });
+
+  // Total de cada línea y de la prefactura, calculados siempre desde los productos agregados
+  const totalLinea = (producto) =>
+    (parseFloat(producto.precio_venta) || 0) * (parseInt(producto.cantidad, 10) || 0);
+  const totalPrefactura = selectedProductos.reduce((acc, producto) => acc + totalLinea(producto), 0);
 
   useEffect(() => {
     fetchClientes();
@@ -270,20 +274,17 @@ export const NuevaPrefactura = () => {
     if (indiceExistente !== -1) {
       // Si ya está en la prefactura, aumentar la cantidad
       productosActualizados = selectedProductos.map((p, i) =>
-        i === indiceExistente
-          ? { ...p, cantidad: p.cantidad + 1, total: p.precio_venta * (p.cantidad + 1) }
-          : p
+        i === indiceExistente ? { ...p, cantidad: p.cantidad + 1 } : p
       );
     } else {
       const precio = parseFloat(producto.precio_venta) || 0; // Asegurar que es número
       productosActualizados = [
         ...selectedProductos,
-        { ...producto, precio_venta: precio, cantidad: 1, total: precio }
+        { ...producto, precio_venta: precio, cantidad: 1 }
       ];
     }
 
     setSelectedProductos(productosActualizados);
-    actualizarTotalPrefactura(productosActualizados);
 
     // Limpiar el buscador para la siguiente búsqueda
     limpiarBuscador();
@@ -291,16 +292,9 @@ export const NuevaPrefactura = () => {
 
   const handleCantidadChange = (index, cantidad) => {
     const cantidadValida = Number.isNaN(cantidad) || cantidad < 1 ? 1 : cantidad;
-    const productosActualizados = selectedProductos.map((p, i) =>
-      i === index ? { ...p, cantidad: cantidadValida, total: p.precio_venta * cantidadValida } : p
+    setSelectedProductos((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, cantidad: cantidadValida } : p))
     );
-    setSelectedProductos(productosActualizados);
-    actualizarTotalPrefactura(productosActualizados);
-  };
-
-  const actualizarTotalPrefactura = (productos) => {
-    const total = productos.reduce((acc, producto) => acc + producto.total, 0);
-    setFormData((prev) => ({ ...prev, total }));
   };
 
   const handleSubmit = (e) => {
@@ -316,12 +310,12 @@ export const NuevaPrefactura = () => {
       fecha: formData.fecha.toISOString().split("T")[0],
       factura: 0,
       codigo_factura: formData.factura,
-      total: formData.total,
+      total: totalPrefactura,
       detalles: selectedProductos.map((p) => ({
         cod_producto: p.cod_producto,
         precio: p.precio_venta,
         cantidad: p.cantidad,
-        total: p.total,
+        total: totalLinea(p),
       })),
     };
 
@@ -336,7 +330,7 @@ export const NuevaPrefactura = () => {
 
         // Reiniciar formulario
         setSelectedProductos([]);
-        setFormData({ cod_cliente: "", fecha: new Date(), factura: "", total: 0 });
+        setFormData({ cod_cliente: "", fecha: new Date(), factura: "" });
         setBusquedaCliente("");
         generarCodigoFactura();
       })
@@ -359,7 +353,7 @@ export const NuevaPrefactura = () => {
       cantidad: producto.cantidad,
       unidad: producto.medida || 'Unidad',
       precioUnitario: parseFloat(producto.precio_venta).toFixed(2),
-      total: parseFloat(producto.total).toFixed(2)
+      total: totalLinea(producto).toFixed(2)
     }));
 
     const formatoFecha = new Intl.DateTimeFormat('es-GT', {
@@ -382,7 +376,7 @@ export const NuevaPrefactura = () => {
         tipo_pago: clienteSeleccionado.tipo_pago || "Efectivo"
       },
       productos: filasProductos,
-      total: parseFloat(formData.total).toFixed(2)
+      total: totalPrefactura.toFixed(2)
     };
 
     // **Depuración: Verificar los datos que se enviarán**
@@ -407,10 +401,7 @@ export const NuevaPrefactura = () => {
   };
 
   const handleRemoveProducto = (index) => {
-    const updatedProductos = [...selectedProductos];
-    updatedProductos.splice(index, 1);
-    setSelectedProductos(updatedProductos);
-    actualizarTotalPrefactura(updatedProductos);
+    setSelectedProductos((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -497,7 +488,7 @@ export const NuevaPrefactura = () => {
             <Form.Label>Fecha</Form.Label>
             <DatePicker
               selected={formData.fecha}
-              onChange={(date) => setFormData({ ...formData, fecha: date })}
+              onChange={(date) => setFormData((prev) => ({ ...prev, fecha: date }))}
               className="form-control"
               dateFormat="yyyy-MM-dd"
             />
@@ -611,7 +602,7 @@ export const NuevaPrefactura = () => {
                   />
                 </td>
                 <td>Q{parseFloat(producto.precio_venta).toFixed(2)}</td>
-                <td>Q{parseFloat(producto.total).toFixed(2)}</td>
+                <td>{`Q${totalLinea(producto).toFixed(2)}`}</td>
                 <td>
                   <Button
                     variant="danger"
@@ -624,9 +615,15 @@ export const NuevaPrefactura = () => {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              <th colSpan="3" className="text-end">Total de la prefactura</th>
+              <th colSpan="2" className="fs-5">{`Q${totalPrefactura.toFixed(2)}`}</th>
+            </tr>
+          </tfoot>
         </Table>
 
-        <h4>Total: Q{parseFloat(formData.total).toFixed(2)}</h4>
+        {/* <h4>{`Total: Q${totalPrefactura.toFixed(2)}`}</h4> */}
 
         <Row className="mt-3">
           <Col>
