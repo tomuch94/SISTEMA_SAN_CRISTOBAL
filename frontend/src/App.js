@@ -8,6 +8,7 @@ import { EditarProducto } from './modules/Productos/EditarProducto';
 // import { Prefacturas } from './modules/Prefacturas';
 import { NuevaPrefactura } from './modules/Prefacturas/NuevaPrefactura';
 import { EditarPrefactura } from './modules/Prefacturas/EditarPrefactura';
+import { ReporteProductos } from './modules/Reportes/ReporteProductos';
 import { Creditos } from './modules/Creditos';
 import { Movimientos } from "./modules/Movimientos";
 import { InsertarUnidadMedida } from "./modules/UnidadesMedida/UnidadesMedida";
@@ -128,6 +129,7 @@ function App() {
         {/* <Route path="/prefacturas" element={<Prefacturas />} /> */}
         <Route path="/prefacturas/nuevo" element={<NuevaPrefactura />} />
         <Route path="/prefacturas/modificar" element={<EditarPrefactura />} />
+        <Route path="/reportes/productos" element={<ReporteProductos />} />
         <Route path="/creditos" element={<Creditos />} />
         <Route path="/movimientos" element={<Movimientos />} />
         <Route path="/unidades-medida" element={<InsertarUnidadMedida />} />

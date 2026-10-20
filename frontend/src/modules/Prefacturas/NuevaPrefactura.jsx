@@ -260,6 +260,9 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
     // Coincide si la descripción contiene todas las palabras escritas (en cualquier orden)
     const coincidencias = productos
       .filter((producto) => {
+        if (producto.estado !== null && producto.estado !== undefined && Number(producto.estado) === 0) {
+          return false; // Los productos inactivos no se pueden cotizar
+        }
         const descripcion = normalizar(producto.descripcion);
         return palabras.every((palabra) => descripcion.includes(palabra));
       })
