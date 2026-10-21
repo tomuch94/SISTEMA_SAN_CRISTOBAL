@@ -818,7 +818,11 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
               className="me-2"
               disabled={generandoPDF || guardando || facturada}
             >
-              {modoEdicion ? (guardando ? "Guardando..." : "Guardar Cambios") : "Registrar Prefactura"}
+              {/* Cada texto va en su propio <span> con key: React reemplaza el elemento completo,
+                  así el botón se actualiza aunque el traductor del navegador haya modificado el texto */}
+              {modoEdicion
+                ? (guardando ? <span key="guardando">Guardando...</span> : <span key="guardar">Guardar Cambios</span>)
+                : <span key="registrar">Registrar Prefactura</span>}
             </Button>
 
             <Button
@@ -826,7 +830,9 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
               onClick={generarPDF}
               disabled={selectedProductos.length === 0 || !formData.cod_cliente || generandoPDF}
             >
-              {generandoPDF ? "Generando PDF..." : "Vista Previa PDF"}
+              {generandoPDF
+                ? <span key="generando">Generando PDF...</span>
+                : <span key="vista">Vista Previa PDF</span>}
             </Button>
           </Col>
         </Row>
