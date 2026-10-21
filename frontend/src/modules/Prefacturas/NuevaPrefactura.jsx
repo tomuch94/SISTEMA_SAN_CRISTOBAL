@@ -13,6 +13,7 @@ import Col from "react-bootstrap/Col";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { NuevoClienteModal } from "../Clientes/NuevoClienteModal";
+import { NuevoProductoModal } from "../Productos/NuevoProductoModal";
 
 const MAX_SUGERENCIAS = 10;
 
@@ -57,6 +58,7 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
   const [errorCliente, setErrorCliente] = useState(false);
   const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
   const [datosNuevoCliente, setDatosNuevoCliente] = useState({});
+  const [mostrarNuevoProducto, setMostrarNuevoProducto] = useState(false);
   const [generandoPDF, setGenerandoPDF] = useState(false);
   const [formData, setFormData] = useState({
     cod_cliente: "",
@@ -307,9 +309,29 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
     setMostrarSugerencias(true);
   };
 
+  // ---- Registro de producto nuevo desde la prefactura ----
+  const abrirNuevoProducto = () => {
+    setMostrarSugerencias(false);
+    setMostrarNuevoProducto(true);
+  };
+
+  const handleProductoCreado = (producto) => {
+    // Agregarlo al catálogo (si es nuevo) y a la prefactura con cantidad 1
+    setProductos((prev) =>
+      prev.some((p) => p.cod_producto === producto.cod_producto) ? prev : [...prev, producto]
+    );
+    setMostrarNuevoProducto(false);
+    handleSelectProducto(producto);
+    mostrarAlerta(`Producto "${producto.descripcion}" agregado a la prefactura`);
+  };
+
   const handleSearchKeyDown = (e) => {
     if (!mostrarSugerencias || sugerencias.length === 0) {
-      if (e.key === "Enter") e.preventDefault(); // Evita enviar el formulario
+      if (e.key === "Enter") {
+        e.preventDefault(); // Evita enviar el formulario
+        // Sin coincidencias: Enter abre el registro de producto nuevo
+        if (searchTerm.trim()) abrirNuevoProducto();
+      }
       return;
     }
     if (e.key === "ArrowDown") {
@@ -659,6 +681,14 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
                 ✕
               </Button>
             )}
+            <Button
+              variant="outline-primary"
+              onClick={abrirNuevoProducto}
+              disabled={facturada}
+              title="Registrar un producto nuevo"
+            >
+              ➕ Nuevo
+            </Button>
           </InputGroup>
 
           {mostrarSugerencias && (
@@ -670,6 +700,7 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
               {sugerencias.length === 0 ? (
                 <ListGroup.Item className="text-muted">
                   {`No se encontraron productos para "${searchTerm}"`}
+                  <div className="small">Presione Enter o use la opción de abajo para registrarlo.</div>
                 </ListGroup.Item>
               ) : (
                 sugerencias.map((producto, index) => {
@@ -708,10 +739,20 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
                   );
                 })
               )}
+              {/* Siempre disponible: registrar un producto que no está en el catálogo */}
+              <ListGroup.Item
+                action
+                type="button"
+                className="text-primary fw-semibold"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={abrirNuevoProducto}
+              >
+                {`➕ Registrar nuevo producto "${searchTerm.trim()}"`}
+              </ListGroup.Item>
             </ListGroup>
           )}
           <Form.Text muted>
-            Escriba para ver coincidencias. Use ↑ ↓ y Enter para seleccionar.
+            Escriba para ver coincidencias. Use ↑ ↓ y Enter para seleccionar, o ➕ Nuevo si el producto no existe.
           </Form.Text>
         </Form.Group>
 
@@ -799,6 +840,16 @@ export const NuevaPrefactura = ({ codFactura = null, onVolver } = {}) => {
         onCreado={handleClienteCreado}
         datosIniciales={datosNuevoCliente}
         clientes={clientes}
+      />
+
+      {/* Registro de producto nuevo (fuera del formulario de la prefactura) */}
+      <NuevoProductoModal
+        show={mostrarNuevoProducto}
+        onHide={() => setMostrarNuevoProducto(false)}
+        onCreado={handleProductoCreado}
+        descripcionInicial={searchTerm.trim()}
+        productos={productos}
+        textoBoton="Registrar y agregar"
       />
     </div>
   );

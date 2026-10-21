@@ -36,13 +36,32 @@ router.get("/reporte-precios", (req, res) => {
 router.post("/", (req, res) => {
   console.log("POST Productos", req.body)
   const { descripcion, precio_compra, precio_venta, stock, cod_unidad } = req.body;
+
+  if (!descripcion || !descripcion.toString().trim() || !cod_unidad) {
+    return res.status(400).json({ error: "La descripción y la unidad de medida son obligatorias" });
+  }
+  const numeros = [precio_compra, precio_venta, stock].map((valor) => Number(valor));
+  if (numeros.some((valor) => valor === null || Number.isNaN(valor) || valor < 0)) {
+    return res.status(400).json({ error: "Precios y stock deben ser números mayores o iguales a 0" });
+  }
+
   // Todo producto nuevo se registra como Activo (estado = 1)
   db.query(
     "INSERT INTO producto (descripcion, precio_compra, precio_venta, stock, cod_unidad, estado) VALUES (?, ?, ?, ?, ?, 1)",
-    [descripcion, precio_compra, precio_venta, stock, cod_unidad],
+    [descripcion.toString().trim(), precio_compra, precio_venta, stock, cod_unidad],
     (err, results) => {
       if (err) return res.status(500).json(err);
-      res.json({ message: "Producto agregado correctamente" });
+      // Se devuelve el producto creado (con su unidad) para poder usarlo de inmediato (p. ej. en Nueva Prefactura)
+      db.query(
+        "SELECT p.*, um.medida FROM producto p LEFT JOIN unidad_medida um ON um.cod_unidad = p.cod_unidad WHERE p.cod_producto = ?",
+        [results.insertId],
+        (err, filas) => {
+          if (err || filas.length === 0) {
+            return res.json({ message: "Producto agregado correctamente", cod_producto: results.insertId });
+          }
+          res.json({ message: "Producto agregado correctamente", cod_producto: results.insertId, producto: filas[0] });
+        }
+      );
     }
   );
 });
